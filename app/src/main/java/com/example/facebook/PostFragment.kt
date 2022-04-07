@@ -2,16 +2,19 @@ package com.example.facebook
 
 import android.Manifest
 import android.app.Activity
+import android.app.Activity.RESULT_OK
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -19,11 +22,12 @@ import android.widget.*
 import androidx.activity.result.ActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.core.view.setPadding
 import androidx.fragment.app.Fragment
 import com.google.gson.Gson
 import de.hdodenhof.circleimageview.CircleImageView
-import java.net.URI
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -42,6 +46,7 @@ class PostFragment : Fragment() {
     lateinit var alfaPreferences: SharedPreferences
     lateinit var betaPreferences: SharedPreferences
 
+    private var file : File? = null
     private var uriPath : String = ""
     private var username: String = "Username"
     private var phPath : String = ""
@@ -77,8 +82,14 @@ class PostFragment : Fragment() {
         ivPhoto.setOnClickListener{pickPhoto()}
         btUpload.setOnClickListener{
             val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-            launcher.launch(intent)}
-        btPost.setOnClickListener{uploadPost()}
+            file = File("${requireActivity().applicationContext.getExternalFilesDir(null)}/photo"+System.currentTimeMillis()+".png")
+            val uri = FileProvider.getUriForFile(requireActivity().applicationContext, requireActivity().applicationContext.packageName,file!!)
+            intent.putExtra(MediaStore.EXTRA_OUTPUT,uri)
+            uriPath = uri.toString()
+            launcher.launch(intent)
+        }
+        btPost.setOnClickListener{
+            uploadPost()}
 
         preferences = requireActivity().applicationContext.getSharedPreferences("SHARED_PREF", Context.MODE_PRIVATE)
         listPreferences = requireActivity().applicationContext.getSharedPreferences("LIST_PREF", Context.MODE_PRIVATE)
@@ -132,15 +143,47 @@ class PostFragment : Fragment() {
         startForActivityGallery.launch(intent)
     }
 
-    private val requestPermissionLauncher=registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ){isGranted->
-        if(!isGranted.containsValue(false)){
+    val launcher = registerForActivityResult(ActivityResultContracts.StartActivityForResult(), ::onResult)
 
-        }else{
-            Toast.makeText(requireActivity().applicationContext,"NecesitaPermisos",Toast.LENGTH_SHORT).show()
+    fun onResult(result : ActivityResult){
+        val bitmap = BitmapFactory.decodeFile(file?.path)
+        ivPhoto.setBackgroundColor(Color.TRANSPARENT)
+        ivPhoto.setPadding(0)
+        ivPhoto.setImageBitmap(bitmap)
+    }
+
+    private val startForActivityGallery=registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ){result->
+
+        if(result.resultCode==Activity.RESULT_OK){
+            val uri = result.data?.data!!
+            requireActivity().contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+            ivPhoto.setBackgroundColor(Color.TRANSPARENT)
+            ivPhoto.setPadding(0)
+            ivPhoto.setImageURI(uri)
+            uriPath = uri.toString()
         }
+    }
 
+    private fun uploadPost(){
+        val sdf = SimpleDateFormat("dd/M/yyyy hh:mm")
+        val currentDate = sdf.format(Date())
+        postsList.add(Post(username,etDescrption.text.toString(),location,currentDate,uriPath,phPath))
+        val editor : SharedPreferences.Editor = listPreferences.edit()
+        val gson = Gson()
+        val json : String = gson.toJson(postsList)
+        editor.putString("LIST",json)
+        editor.apply()
+        ivPhoto.setBackgroundColor(Color.parseColor("#C5C7C9"))
+        etDescrption.setText("")
+        spinner.setSelection(0)
+        ivPhoto.setPadding(310)
+        ivPhoto.setImageResource(R.drawable.addph)
+        Toast.makeText(requireActivity().applicationContext, "Published!", Toast.LENGTH_LONG).show();
     }
 
     private fun requestPermission() {
@@ -161,80 +204,19 @@ class PostFragment : Fragment() {
                         Manifest.permission.CAMERA
                     )
                     requestPermissionLauncher.launch(PERMISSIONS)
-                    //requestPermissionLauncher.launch(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                    //requestPermissionLauncher.launch(android.Manifest.permission.CAMERA)
                 }
             }
         }
     }
 
-    val launcher = registerForActivityResult(ActivityResultContracts.StartActivityForResult(), ::onResult)
+    private val requestPermissionLauncher=registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ){isGranted->
+        if(!isGranted.containsValue(false)){
 
-
-    fun onResult(result : ActivityResult){
-        val uri = result.data?.extras?.get("data") as Bitmap
-        ivPhoto.setBackgroundColor(Color.parseColor("#000000"))
-        ivPhoto.setPadding(0)
-        ivPhoto.setImageBitmap(uri)
-            //ivPhoto.setImageURI(uri)
-            //uriPath = uri.toString()
-    }
-
-    private fun requestPermissionForCamera() {
-
-        if (Build.VERSION.SDK_INT>=Build.VERSION_CODES.M){
-            when{
-                ContextCompat.checkSelfPermission(
-                    requireActivity().applicationContext,
-                    android.Manifest.permission.CAMERA
-                )==PackageManager.PERMISSION_GRANTED->{
-                    takePhoto()
-                }
-                else->{
-
-                }
-            }
         }else{
-            takePhoto()
+            Toast.makeText(requireActivity().applicationContext,"NecesitaPermisos",Toast.LENGTH_SHORT).show()
         }
-    }
-
-    private val startForActivityGallery=registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ){result->
-
-        if(result.resultCode==Activity.RESULT_OK){
-            val uri = result.data?.data!!
-            requireActivity().contentResolver.takePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
-            ivPhoto.setBackgroundColor(Color.parseColor("#000000"))
-            ivPhoto.setPadding(0)
-            ivPhoto.setImageURI(uri)
-            uriPath = uri.toString()
-        }
-    }
-
-    private fun takePhoto(){
-
-    }
-
-    private fun uploadPost(){
-        val sdf = SimpleDateFormat("dd/M/yyyy hh:mm")
-        val currentDate = sdf.format(Date())
-        postsList.add(Post(username,etDescrption.text.toString(),location,currentDate,uriPath,phPath))
-        val editor : SharedPreferences.Editor = listPreferences.edit()
-        val gson = Gson()
-        val json : String = gson.toJson(postsList)
-        editor.putString("LIST",json)
-        editor.apply()
-        ivPhoto.setBackgroundColor(Color.parseColor("#C5C7C9"))
-        ivPhoto.setImageResource(R.drawable.addph)
-        ivPhoto.setPadding(120)
-        etDescrption.setText("")
-        spinner.setSelection(0)
-        Toast.makeText(requireActivity().applicationContext, "Published!", Toast.LENGTH_LONG).show();
     }
 
     companion object {
